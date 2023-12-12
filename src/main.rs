@@ -1,9 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
-use std::sync::mpsc;
-use std::thread;
-use std::sync::Arc;
+use rayon::prelude::*;
 
 fn simulate_results(guess: &str, target: &str) -> String {
     let mut results = vec!['B'; guess.len()];
@@ -83,32 +81,13 @@ impl WordleSolver {
         })
     }
 
-    // In make_guess method, wrap word_list in an Arc for shared ownership
     fn make_guess(&self) -> Option<String> {
-        let (tx, rx) = mpsc::channel();
-        let word_list = Arc::new(self.word_list.clone()); // Clone the word list itself into the Arc
-    
-        thread::spawn(move || {
-            for word in word_list.iter() { // Iterate over the word list
-                let tx = tx.clone();
-                let word_clone = word.clone(); // Clone the word
-                let word_list_clone = Arc::clone(&word_list); // Clone the Arc, not the list
-                thread::spawn(move || {
-                    let entropy = calculate_entropy(&word_clone, &word_list_clone);
-                    tx.send((word_clone, entropy)).unwrap();
-                });
-            }
-        });
-    
-        let mut max_entropy = (None, f64::MIN);
-        for (word, entropy) in rx {
-            if entropy > max_entropy.1 {
-                max_entropy = (Some(word), entropy);
-            }
-        }
-    
-        max_entropy.0
-    }    
+        self.word_list
+            .par_iter() // Use Rayon's parallel iterator
+            .map(|word| (word.clone(), calculate_entropy(word, &self.word_list)))
+            .max_by(|(_, entropy_a), (_, entropy_b)| entropy_a.partial_cmp(entropy_b).unwrap())
+            .map(|(word, _)| word)
+    }  
 
     fn process_results(&mut self, guess: &str, results: &str) {
         guess.chars().zip(results.chars()).enumerate().for_each(|(idx, (letter, status))| {
