@@ -1,172 +1,95 @@
+mod modes;
+mod session;
 mod solver;
 mod ui;
 
-use solver::WordleSolver;
-use std::io;
-use ui::{
-    clear_screen, parse_choice, parse_prompt_input, read_line_trimmed, render_board, tie_set,
-    PromptCommand, PromptInput,
-};
+use crate::modes::{common, game, solver as solver_mode};
+use crate::ui::{clear_screen, read_line_trimmed};
+
+const WORDLIST_PATH: &str = "wordlist.txt";
+
+enum MainMenuChoice {
+    Game,
+    Solver,
+    Help,
+    Exit,
+}
+
+fn parse_main_menu_choice(input: &str) -> Option<MainMenuChoice> {
+    match input.trim().to_ascii_uppercase().as_str() {
+        "1" | "PLAY" | "GAME" => Some(MainMenuChoice::Game),
+        "2" | "SOLVER" | "SOLVE" => Some(MainMenuChoice::Solver),
+        "3" | "HELP" => Some(MainMenuChoice::Help),
+        "4" | "EXIT" | "QUIT" => Some(MainMenuChoice::Exit),
+        _ => None,
+    }
+}
+
+fn show_help_screen() {
+    clear_screen();
+    println!(
+        "========================\n\
+         Help\n\
+         ========================\n"
+    );
+    println!("1) Game Mode");
+    println!("   You guess words; the game computes G/Y/B feedback.");
+    println!("   Use commands like /HINT and /UNDO while playing.");
+    println!();
+    println!("2) Solver Mode");
+    println!("   The solver suggests guesses; you type Wordle feedback (G/Y/B).");
+    println!("   Great when you're solving an external game.");
+    println!();
+    println!("All words come from the bundled word list: {WORDLIST_PATH}");
+    common::wait_for_enter("Press Enter to return to the main menu.");
+}
 
 fn main() {
-    let wordlist_path = "wordlist.txt";
-
-    let mut solver = match WordleSolver::new(wordlist_path) {
-        Ok(solver) => solver,
-        Err(e) => {
-            eprintln!("Failed to load bundled word list '{wordlist_path}': {e}");
-            std::process::exit(1);
-        }
-    };
-
-    let mut history: Vec<WordleSolver> = Vec::new();
-    let mut board_history: Vec<(solver::Word, String)> = Vec::new();
-
-    'game: loop {
+    loop {
         clear_screen();
         println!(
             "========================\n\
-             Drew's Wordle Solver\n\
-             Enter feedback as 5 chars: G/Y/B (example: GYBBY)\n\
-             Commands: HELP STATUS TOP [n] CANDS [n] BOARD UNDO EXIT\n\
+             Drew's Wordle Arcade\n\
              ========================\n"
         );
-
-        render_board(&board_history);
-        let remaining = solver.candidates().len();
-        println!(
-            "Turn {}/{} | Remaining candidates: {}",
-            solver.attempt_number(),
-            solver.max_attempts(),
-            remaining
-        );
-
-        let scored = solver.scored_guesses();
-        if scored.is_empty() {
-            println!("No candidates remain. Check for inconsistent feedback.");
-            break;
-        }
-
-        let ties = tie_set(&scored, 1e-10);
-        let guess = if ties.len() > 1 {
-            println!("Multiple top-ranked guesses ({} total):", ties.len());
-            for (i, (w, _)) in ties.iter().take(10).enumerate() {
-                println!("   {}. {}", i + 1, w);
-            }
-            if ties.len() > 10 {
-                println!("   ... +{} more", ties.len() - 10);
-            }
-            println!("Pick a guess (number or word), or press Enter for #1.");
-            loop {
-                let choice = read_line_trimmed();
-                if let Some(picked) = parse_choice(&choice, ties) {
-                    break picked;
-                }
-                println!("Invalid choice. Enter a valid number or one of the tied words:");
-            }
-        } else {
-            println!("Suggested guess: {}", scored[0].0);
-            scored[0].0
-        };
-
-        println!("Enter results for '{guess}': ");
-        let results = loop {
-            let mut results = String::new();
-            io::stdin()
-                .read_line(&mut results)
-                .expect("Failed to read line");
-            match parse_prompt_input(&results) {
-                Some(PromptInput::Results(pattern)) => break pattern,
-                Some(PromptInput::Command(cmd)) => match cmd {
-                    PromptCommand::Exit => return,
-                    PromptCommand::Undo => {
-                        if let Some(previous) = history.pop() {
-                            solver = previous;
-                            board_history.pop();
-                            println!("Previous turn undone.");
-                        } else {
-                            println!("Nothing to undo yet.");
-                        }
-                        println!();
-                        continue 'game;
-                    }
-                    PromptCommand::Help => {
-                        println!("Commands:");
-                        println!("  HELP         Show this command list");
-                        println!("  STATUS       Show turn and candidate status");
-                        println!("  TOP [n]      Show top n suggestions (default 10)");
-                        println!("  CANDS [n]    Show first n remaining candidates (default 10)");
-                        println!("  BOARD        Show guess history with colored feedback");
-                        println!("  UNDO         Revert the previous accepted turn");
-                        println!("  EXIT         Quit the solver");
-                        println!("You can also enter a 5-letter G/Y/B pattern directly.");
-                    }
-                    PromptCommand::Status => {
-                        println!(
-                            "Status: turn {}/{} | candidates {} | current guess {}",
-                            solver.attempt_number(),
-                            solver.max_attempts(),
-                            solver.candidates().len(),
-                            guess
-                        );
-                    }
-                    PromptCommand::Top(n) => {
-                        let limit = n.min(scored.len());
-                        if limit == 0 {
-                            println!("No scored guesses available.");
-                        } else {
-                            println!("Top {limit} ranked guesses:");
-                            for (i, (w, _)) in scored.iter().take(limit).enumerate() {
-                                println!("  {:>2}. {}", i + 1, w);
-                            }
-                        }
-                    }
-                    PromptCommand::Cands(n) => {
-                        let cands = solver.candidates();
-                        let limit = n.min(cands.len());
-                        if limit == 0 {
-                            println!("No candidates remain.");
-                        } else {
-                            println!("First {limit} candidates:");
-                            for (i, w) in cands.iter().take(limit).enumerate() {
-                                println!("  {:>2}. {}", i + 1, w);
-                            }
-                        }
-                    }
-                    PromptCommand::Board => {
-                        render_board(&board_history);
-                    }
-                },
-                None => {
-                    println!("Invalid input. Enter G/Y/B, or type HELP.");
-                }
-            }
-        };
-
-        history.push(solver.clone());
-        let status = match solver.next_turn(guess, &results) {
-            Ok(status) => status,
-            Err(e) => {
-                history.pop();
-                println!("{e}");
-                println!("State unchanged. Please re-enter feedback for the same guess.");
-                continue;
-            }
-        };
-        board_history.push((guess, results));
-
-        match status {
-            "won" => {
-                println!("Congratulations, you won!");
-                break;
-            }
-            "lost" => {
-                println!("Game over. Better luck next time!");
-                break;
-            }
-            _ => {}
-        }
-
+        println!("1) Play Wordle (Game Mode)");
+        println!("2) Solve an External Wordle (Solver Mode)");
+        println!("3) Help");
+        println!("4) Exit");
         println!();
+        println!("Choose an option:");
+
+        let choice_input = match read_line_trimmed() {
+            Ok(Some(input)) => input,
+            Ok(None) => {
+                println!("EOF received. Exiting.");
+                break;
+            }
+            Err(e) => {
+                eprintln!("Failed to read input: {e}");
+                break;
+            }
+        };
+
+        let Some(choice) = parse_main_menu_choice(&choice_input) else {
+            println!("Invalid selection.");
+            common::wait_for_enter("Press Enter to continue.");
+            continue;
+        };
+
+        let outcome = match choice {
+            MainMenuChoice::Game => game::run(WORDLIST_PATH),
+            MainMenuChoice::Solver => solver_mode::run(WORDLIST_PATH),
+            MainMenuChoice::Help => {
+                show_help_screen();
+                Ok(())
+            }
+            MainMenuChoice::Exit => break,
+        };
+
+        if let Err(e) = outcome {
+            eprintln!("Error: {e}");
+            common::wait_for_enter("Press Enter to return to the main menu.");
+        }
     }
 }

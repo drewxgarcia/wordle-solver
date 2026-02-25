@@ -1,17 +1,25 @@
-# Drew's Wordle Solver
+# Drew's Wordle Arcade
 
-A fast, interactive terminal Wordle solver built in Rust.
+A fast, interactive terminal Wordle app built in Rust.
 
-It recommends high-information guesses, tracks constraints exactly (including duplicate-letter edge cases), and provides a command-driven UX.
+It now ships with two game-style modes behind a startup menu:
+- `Game Mode`: play Wordle directly in the terminal.
+- `Solver Mode`: solve an external Wordle by entering feedback.
 
 ## Highlights
 
 - Wordle-correct feedback handling (`G`, `Y`, `B`), including duplicates.
 - Entropy-based guess ranking for strong information gain each turn.
+- Startup mode menu:
+  - `Play Wordle (Game Mode)`
+  - `Solve an External Wordle (Solver Mode)`
+  - `Help`
+  - `Exit`
 - Interactive terminal dashboard with:
   - Emoji board history (`🟩 🟨 ⬛`)
   - `UNDO` support
-  - `HELP`, `STATUS`, `TOP [n]`, `CANDS [n]`, `BOARD`, `EXIT`
+  - Solver mode commands: `HELP`, `STATUS`, `TOP [n]`, `CANDS [n]`, `BOARD`, `UNDO`, `EXIT`
+  - Game mode slash commands: `/HELP`, `/HINT [n]`, `/STATUS`, `/BOARD`, `/UNDO`, `/EXIT`
 - Bundled word list (`wordlist.txt`) for batteries-included usage.
 - Clean architecture split between solver logic and UI logic.
 
@@ -47,7 +55,11 @@ On Windows:
 
 ## How To Use
 
-Each turn, the solver suggests a guess. Enter Wordle feedback as a 5-character pattern:
+When the app starts, choose a mode from the menu.
+
+### Solver Mode
+
+Each turn, the solver suggests a guess. Enter feedback as a 5-character pattern:
 
 - `G` = green (right letter, right position)
 - `Y` = yellow (right letter, wrong position)
@@ -66,7 +78,20 @@ Example:
 - `CANDS [n]`: show first `n` remaining candidates
 - `BOARD`: show guess history with colored squares
 - `UNDO`: revert previous accepted turn
-- `EXIT`: quit
+- `EXIT`: return to main menu
+
+### Game Mode
+
+Enter a 5-letter guess each turn and the game will compute feedback automatically.
+
+Game mode commands use a `/` prefix:
+
+- `/HELP`: show command help
+- `/HINT [n]`: show top suggested guesses
+- `/STATUS`: show turn and candidate count
+- `/BOARD`: show guess history with colored squares
+- `/UNDO`: revert previous accepted turn
+- `/EXIT`: return to main menu
 
 ## Methodology: Entropy-Based Guess Selection
 
@@ -96,3 +121,9 @@ Feedback simulation follows Wordle’s two-pass logic:
 2. **Yellows second**: non-green letters are marked yellow only if remaining count for that letter is still available.
 
 This is critical for duplicate letters and avoids common incorrect implementations.
+
+The solver now filters candidates directly by oracle equivalence:
+
+`simulate_results_code(guess, target) == observed_feedback_code`
+
+This keeps scoring and filtering on one correctness path.
